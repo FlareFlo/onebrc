@@ -7,6 +7,8 @@ use std::ops::{Neg, Range};
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::ptr::read;
+use std::sync::{Arc, OnceLock};
+use std::sync::mpsc::{channel, Sender};
 use std::thread::{available_parallelism, current, JoinHandle, sleep};
 use std::time::{Duration, Instant};
 
@@ -130,10 +132,23 @@ fn main() {
 
     let mut index = 0;
     let mut threads = vec![];
+    let (sender, receiver) = channel();
     for i in 0..cpus {
         let range = index..({index += per_thread; index.min(size)});
-        threads.push(citymap_threaad(input.to_owned(), range, i));
+        threads.push(citymap_threaad(input.to_owned(), range, i, sender.clone()));
     }
+    let mut ranges = (0..cpus).into_iter()
+        .map(|_|receiver.recv().unwrap())
+        .collect::<Vec<_>>();
+    ranges.sort_unstable_by_key(|e|e.start);
+    assert!(
+        ranges.windows(2)
+            .all(|e|{
+                let first = &e[0];
+                let second = &e[1];
+                first.end == second.start
+            }),
+        "Ranges overlap or have gaps: {ranges:?}");
     let results = threads.into_iter()
         .map(|e|e.join().unwrap())
         //.map(|e|dbg!(e))
@@ -148,7 +163,7 @@ fn main() {
     println!("{:?}", start.elapsed());
 }
 
-fn citymap_threaad(path: String, mut range: Range<u64>, i: usize) -> JoinHandle<Citymap> {
+fn citymap_threaad(path: String, mut range: Range<u64>, i: usize, range_feedback: Sender<Range<u64>>) -> JoinHandle<Citymap> {
     thread::Builder::new().name(format!("process_thread id: {i} assigned: {range:?}")).spawn(move ||{
         let mut file = File::open(path).unwrap();
         //println!("Before: {range:?}");
@@ -184,12 +199,14 @@ fn citymap_threaad(path: String, mut range: Range<u64>, i: usize) -> JoinHandle<
             }
         }
 
+        // Notify main about alignment
+        range_feedback.send(range.clone()).unwrap();
         //println!("After: {range:?}");
         // Ensure we remain within bounds of the designated file range
         file.seek(SeekFrom::Start(range.start)).unwrap();
-        let limited = file.take(range.end - range.start);
 
-        let mut buffered = BufReader::with_capacity(10^9, limited);
+        let mut limited = BufReader::with_capacity(10^5, file);
+        let mut buffered = limited.take(range.end - range.start);
         citymap_naive(&mut buffered)
     }).unwrap()
 }

@@ -1,16 +1,14 @@
-use std::collections::{BTreeMap, HashMap};
-use std::{fs, thread};
+use std::collections::{HashMap};
+use std::{thread};
+use std::env::args;
 use std::fs::File;
 use std::hash::{DefaultHasher, Hasher};
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, stdout, Take};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::ops::{Neg, Range};
 use std::os::unix::fs::FileExt;
-use std::path::{Path, PathBuf};
-use std::ptr::read;
-use std::sync::{Arc, OnceLock};
 use std::sync::mpsc::{channel, Sender};
-use std::thread::{available_parallelism, current, JoinHandle, sleep};
-use std::time::{Duration, Instant};
+use std::thread::{available_parallelism, JoinHandle};
+use std::time::{Instant};
 
 #[derive(Copy, Clone, Debug)]
 struct City {
@@ -116,18 +114,33 @@ impl Citymap {
     }
 }
 
-fn city_to_id(city: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    hasher.write(city.as_bytes());
-    hasher.finish()
-}
-
 fn main() {
-    //let cpus = available_parallelism().unwrap().get();
-    let cpus = 8;
+    let mut args = args();
+
     let start = Instant::now();
     let input = "small.txt";
-    let size = File::open(input).unwrap().metadata().unwrap().len();
+
+    let results = if args.find(|e|e == "st").is_some() {
+            citymap_single_thread(input)
+    } else {
+        citymap_multi_threaded(input)
+    };
+
+    print_results(results);
+
+    println!("{:?}", start.elapsed());
+}
+
+fn citymap_single_thread(path: &str) -> Citymap {
+    let f = File::open(path).unwrap();
+    let mut buf = BufReader::with_capacity(10^8, f);
+    citymap_naive(&mut buf)
+}
+
+fn citymap_multi_threaded(path: &str) -> Citymap {
+    let cpus = available_parallelism().unwrap().get();
+    //let cpus = 8;
+    let size = File::open(path).unwrap().metadata().unwrap().len();
     let per_thread = size / cpus as u64;
 
     let mut index = 0;
@@ -135,7 +148,7 @@ fn main() {
     let (sender, receiver) = channel();
     for i in 0..cpus {
         let range = index..({index += per_thread; index.min(size)});
-        threads.push(citymap_threaad(input.to_owned(), range, i, sender.clone()));
+        threads.push(citymap_thread(path.to_owned(), range, i, sender.clone()));
     }
     let mut ranges = (0..cpus).into_iter()
         .map(|_|receiver.recv().unwrap())
@@ -157,13 +170,10 @@ fn main() {
             left
         })
         .unwrap();
-
-    print_results(results);
-
-    println!("{:?}", start.elapsed());
+    results
 }
 
-fn citymap_threaad(path: String, mut range: Range<u64>, i: usize, range_feedback: Sender<Range<u64>>) -> JoinHandle<Citymap> {
+fn citymap_thread(path: String, mut range: Range<u64>, i: usize, range_feedback: Sender<Range<u64>>) -> JoinHandle<Citymap> {
     thread::Builder::new().name(format!("process_thread id: {i} assigned: {range:?}")).spawn(move ||{
         let mut file = File::open(path).unwrap();
         //println!("Before: {range:?}");

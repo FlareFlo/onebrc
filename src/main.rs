@@ -2,10 +2,10 @@ use std::collections::{HashMap};
 use std::{thread};
 use std::env::args;
 use std::fs::File;
-use std::hash::{DefaultHasher, Hasher};
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom};
 use std::ops::{Neg, Range};
 use std::os::unix::fs::FileExt;
+use std::str::from_utf8;
 use std::sync::mpsc::{channel, Sender};
 use std::thread::{available_parallelism, JoinHandle};
 use std::time::{Instant};
@@ -19,24 +19,24 @@ struct City {
 }
 
 impl City {
-    pub fn add_new_str(&mut self, input: &str) {
+    pub fn add_new(&mut self, input: &[u8]) {
         let mut val = 0;
         let mut is_neg = false;
-        for char in input.chars() {
+        for &char in input {
             match char {
-                '0'..='9' => {
+                b'0'..=b'9' => {
                     val *= 10;
-                    let digit = char as u8 - '0' as u8;
+                    let digit = char - b'0';
                     val += digit as i64;
                 }
-                '-' => {
+                b'-' => {
                     is_neg = true;
                 }
-                '.' => {
+                b'.' => {
 
                 }
                 _ => {
-                    panic!("encountered {char} in value")
+                    panic!("encountered {} in value", char::from(char))
                 }
             }
         }
@@ -89,7 +89,7 @@ struct Citymap {
 
 impl Citymap {
     pub fn lookup(&mut self, lookup: &str) -> &mut City {
-           let mut get = self.map.get(lookup);
+           let get = self.map.get(lookup);
             if get.is_none() {
                 self.map.insert(lookup.to_owned(), Default::default());
             }
@@ -132,9 +132,12 @@ fn main() {
 }
 
 fn citymap_single_thread(path: &str) -> Citymap {
-    let f = File::open(path).unwrap();
-    let mut buf = BufReader::with_capacity(10^8, f);
-    citymap_naive(&mut buf)
+    let mut f = File::open(path).unwrap();
+    // let mut buf = BufReader::with_capacity(10^8, f);
+    let mut vec = vec![];
+    f.read_to_end(&mut vec).unwrap();
+    let mut vec = Cursor::new(vec);
+    citymap_naive(&mut vec)
 }
 
 fn citymap_multi_threaded(path: &str) -> Citymap {
@@ -215,7 +218,7 @@ fn citymap_thread(path: String, mut range: Range<u64>, i: usize, range_feedback:
         // Ensure we remain within bounds of the designated file range
         file.seek(SeekFrom::Start(range.start)).unwrap();
 
-        let mut limited = BufReader::with_capacity(10^5, file);
+        let limited = BufReader::with_capacity(10^5, file);
         let mut buffered = limited.take(range.end - range.start);
         citymap_naive(&mut buffered)
     }).unwrap()
@@ -223,22 +226,24 @@ fn citymap_thread(path: String, mut range: Range<u64>, i: usize, range_feedback:
 
 fn citymap_naive(input: &mut impl BufRead) -> Citymap {
     let mut map = Citymap::new();
-    let mut line = String::new();
+    let mut buf = Vec::with_capacity(50);
     loop {
-        let read = input.read_line(&mut line).unwrap();
+        let read = input.read_until(b'\n', &mut buf).unwrap();
         if read == 0 {
             break;
         }
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let mut s = trimmed.split(";");
-        let city = s.next().unwrap();
-        let val = s.next().unwrap();
-        let entry = map.lookup(city);
-        entry.add_new_str(val.trim());
-        line.clear();
+        let mut city = None;
+        let mut val = None;
+        for (i, &char) in buf.iter().enumerate() {
+            if char == b';' {
+                city = Some(&buf[0..i]);
+                val = Some(&buf[(i + 1)..(buf.len() - 1)]);
+                break;
+            }
+        };
+        let entry = map.lookup(from_utf8(city.unwrap()).unwrap());
+        entry.add_new(val.unwrap());
+        buf.clear();
     }
     map
 }

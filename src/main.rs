@@ -2,7 +2,7 @@ use std::collections::{HashMap};
 use std::{thread};
 use std::env::args;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::ops::{Neg, Range};
 use std::os::unix::fs::FileExt;
 use std::str::from_utf8;
@@ -132,12 +132,10 @@ fn main() {
 }
 
 fn citymap_single_thread(path: &str) -> Citymap {
-    let mut f = File::open(path).unwrap();
-    // let mut buf = BufReader::with_capacity(10^8, f);
-    let mut vec = vec![];
-    f.read_to_end(&mut vec).unwrap();
-    let mut vec = Cursor::new(vec);
-    citymap_naive(&mut vec)
+    let f = File::open(path).unwrap();
+
+    let mut buf = BufReader::with_capacity(10_usize.pow(8), f);
+    citymap_naive(&mut buf)
 }
 
 fn citymap_multi_threaded(path: &str) -> Citymap {
@@ -218,7 +216,7 @@ fn citymap_thread(path: String, mut range: Range<u64>, i: usize, range_feedback:
         // Ensure we remain within bounds of the designated file range
         file.seek(SeekFrom::Start(range.start)).unwrap();
 
-        let limited = BufReader::with_capacity(10^5, file);
+        let limited = BufReader::with_capacity(10_usize.pow(5), file);
         let mut buffered = limited.take(range.end - range.start);
         citymap_naive(&mut buffered)
     }).unwrap()
@@ -241,6 +239,9 @@ fn citymap_naive(input: &mut impl BufRead) -> Citymap {
                 break;
             }
         };
+        if city.is_none() {
+            panic!("String:---{}---", String::from_utf8(buf).unwrap());
+        }
         let entry = map.lookup(from_utf8(city.unwrap()).unwrap());
         entry.add_new(val.unwrap());
         buf.clear();

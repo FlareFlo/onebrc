@@ -226,7 +226,6 @@ fn citymap_thread(
 
             // Notify main about alignment
             range_feedback.send(range.clone()).unwrap();
-            //println!("After: {range:?}");
             // Ensure we remain within bounds of the designated file range
             file.seek(SeekFrom::Start(range.start)).unwrap();
 
@@ -260,9 +259,6 @@ fn citymap_naive(input: &mut impl BufRead) -> Citymap {
                 val = Some(&buf[(i + 1)..(buf.len() - 1)]);
                 break;
             }
-        }
-        if city.is_none() {
-            panic!("String:---{}---", String::from_utf8(buf).unwrap());
         }
         #[cfg(not(feature = "unsafe"))]
         let entry = map.lookup(std::str::from_utf8(city.unwrap()).unwrap());

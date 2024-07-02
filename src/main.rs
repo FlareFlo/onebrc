@@ -118,7 +118,7 @@ fn main() {
     let mut args = args();
 
     let start = Instant::now();
-    let input = "small.txt";
+    let input = "measurements.txt";
 
     let results = if args.find(|e|e == "st").is_some() {
             citymap_single_thread(input)
@@ -140,7 +140,6 @@ fn citymap_single_thread(path: &str) -> Citymap {
 
 fn citymap_multi_threaded(path: &str) -> Citymap {
     let cpus = available_parallelism().unwrap().get();
-    //let cpus = 8;
     let size = File::open(path).unwrap().metadata().unwrap().len();
     let per_thread = size / cpus as u64;
 
@@ -227,9 +226,14 @@ fn citymap_naive(input: &mut impl BufRead) -> Citymap {
     let mut buf = Vec::with_capacity(50);
     loop {
         let read = input.read_until(b'\n', &mut buf).unwrap();
+        // Stream has finished
         if read == 0 {
             break;
         }
+
+        // Skip over just newline strings that get created by the alignment process
+        if buf == &[b'\n'] {  continue }
+
         let mut city = None;
         let mut val = None;
         for (i, &char) in buf.iter().enumerate() {

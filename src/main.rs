@@ -5,7 +5,6 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::ops::{Neg, Range};
 use std::os::unix::fs::FileExt;
-use std::str::{from_utf8, from_utf8_unchecked};
 use std::sync::mpsc::{channel, Sender};
 use std::thread::{available_parallelism, JoinHandle};
 use std::time::{Instant};
@@ -97,7 +96,7 @@ impl Citymap {
     }
     pub fn new() -> Self {
         Self {
-            map: HashMap::new(),
+            map: Default::default(),
         }
     }
     pub fn into_key_values(self) -> Vec<(String, City)> {
@@ -247,10 +246,10 @@ fn citymap_naive(input: &mut impl BufRead) -> Citymap {
             panic!("String:---{}---", String::from_utf8(buf).unwrap());
         }
         #[cfg(not(feature = "unsafe"))]
-        let entry = map.lookup(from_utf8(city.unwrap()).unwrap());
+        let entry = map.lookup(std::str::from_utf8(city.unwrap()).unwrap());
 
         #[cfg(feature = "unsafe")]
-        let entry = map.lookup(unsafe { from_utf8_unchecked(city.unwrap()) });
+        let entry = map.lookup(unsafe { std::str::from_utf8_unchecked(city.unwrap()) });
 
         entry.add_new(val.unwrap());
         buf.clear();

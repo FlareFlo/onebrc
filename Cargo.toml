@@ -6,4 +6,9 @@ edition = "2021"
 [features]
 unsafe = []
 
+[profile.release]
+lto = true
+panic = "abort"
+codegen-units = 1
+
 [dependencies]

@@ -83,16 +83,22 @@ impl Default for City {
 #[derive(Default, Clone, Debug)]
 struct Citymap {
     // Length then values
-    pub map: HashMap<String, City>,
+    pub map: HashMap<u32, (String, City)>,
+}
+
+fn hashstr(s: &str) -> u32 {
+    let b = s.as_bytes();
+    u32::from_le_bytes([s.len() as u8, b[0], b[1], b[2]])
 }
 
 impl Citymap {
     pub fn lookup(&mut self, lookup: &str) -> &mut City {
-           let get = self.map.get(lookup);
+            let hash = hashstr(lookup);
+           let get = self.map.get(&hash);
             if get.is_none() {
-                self.map.insert(lookup.to_owned(), Default::default());
+                self.map.insert(hash, (lookup.to_owned(), Default::default()));
             }
-            self.map.get_mut(lookup).unwrap()
+            &mut self.map.get_mut(&hash).unwrap().1
     }
     pub fn new() -> Self {
         Self {
@@ -100,13 +106,13 @@ impl Citymap {
         }
     }
     pub fn into_key_values(self) -> Vec<(String, City)> {
-        self.map.into_iter().collect()
+        self.map.into_iter().map(|(_, s)|s).collect()
     }
     pub fn merge_with(&mut self, rhs: Self) {
         for (k, v) in rhs.map.into_iter() {
             self.map.entry(k)
                 .and_modify(|lhs|{
-                    lhs.add_result(v);
+                    lhs.1.add_result(v.1);
                 })
                 .or_insert(v);
         }

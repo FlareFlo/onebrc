@@ -1,3 +1,5 @@
+#![feature(hash_raw_entry)]
+
 use std::collections::HashMap;
 use std::env::args;
 use std::fs::File;
@@ -92,12 +94,8 @@ fn hashstr(s: &str) -> u32 {
 impl Citymap {
     pub fn lookup(&mut self, lookup: &str) -> &mut City {
         let hash = hashstr(lookup);
-        let get = self.map.get(&hash);
-        if get.is_none() {
-            self.map
-                .insert(hash, (lookup.to_owned(), Default::default()));
-        }
-        &mut self.map.get_mut(&hash).unwrap().1
+        let builder = self.map.raw_entry_mut();
+        &mut builder.from_key(&hash).or_insert(hash, (lookup.to_owned(), Default::default())).1.1
     }
     pub fn new() -> Self {
         Self {

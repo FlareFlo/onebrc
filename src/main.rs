@@ -1,13 +1,13 @@
-use std::collections::{HashMap};
-use std::{thread};
+use std::collections::HashMap;
 use std::env::args;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::ops::{Neg, Range};
 use std::os::unix::fs::FileExt;
 use std::sync::mpsc::{channel, Sender};
+use std::thread;
 use std::thread::{available_parallelism, JoinHandle};
-use std::time::{Instant};
+use std::time::Instant;
 
 #[derive(Copy, Clone, Debug)]
 struct City {
@@ -31,9 +31,7 @@ impl City {
                 b'-' => {
                     is_neg = true;
                 }
-                b'.' => {
-
-                }
+                b'.' => {}
                 _ => {
                     panic!("encountered {} in value", char::from(char))
                 }
@@ -93,12 +91,13 @@ fn hashstr(s: &str) -> u32 {
 
 impl Citymap {
     pub fn lookup(&mut self, lookup: &str) -> &mut City {
-            let hash = hashstr(lookup);
-           let get = self.map.get(&hash);
-            if get.is_none() {
-                self.map.insert(hash, (lookup.to_owned(), Default::default()));
-            }
-            &mut self.map.get_mut(&hash).unwrap().1
+        let hash = hashstr(lookup);
+        let get = self.map.get(&hash);
+        if get.is_none() {
+            self.map
+                .insert(hash, (lookup.to_owned(), Default::default()));
+        }
+        &mut self.map.get_mut(&hash).unwrap().1
     }
     pub fn new() -> Self {
         Self {
@@ -106,12 +105,13 @@ impl Citymap {
         }
     }
     pub fn into_key_values(self) -> Vec<(String, City)> {
-        self.map.into_iter().map(|(_, s)|s).collect()
+        self.map.into_iter().map(|(_, s)| s).collect()
     }
     pub fn merge_with(&mut self, rhs: Self) {
         for (k, v) in rhs.map.into_iter() {
-            self.map.entry(k)
-                .and_modify(|lhs|{
+            self.map
+                .entry(k)
+                .and_modify(|lhs| {
                     lhs.1.add_result(v.1);
                 })
                 .or_insert(v);
@@ -125,8 +125,8 @@ fn main() {
     let start = Instant::now();
     let input = "measurements.txt";
 
-    let results = if args.find(|e|e == "st").is_some() {
-            citymap_single_thread(input)
+    let results = if args.find(|e| e == "st").is_some() {
+        citymap_single_thread(input)
     } else {
         citymap_multi_threaded(input)
     };
@@ -152,23 +152,28 @@ fn citymap_multi_threaded(path: &str) -> Citymap {
     let mut threads = vec![];
     let (sender, receiver) = channel();
     for i in 0..cpus {
-        let range = index..({index += per_thread; index.min(size)});
+        let range = index..({
+            index += per_thread;
+            index.min(size)
+        });
         threads.push(citymap_thread(path.to_owned(), range, i, sender.clone()));
     }
-    let mut ranges = (0..cpus).into_iter()
-        .map(|_|receiver.recv().unwrap())
+    let mut ranges = (0..cpus)
+        .into_iter()
+        .map(|_| receiver.recv().unwrap())
         .collect::<Vec<_>>();
-    ranges.sort_unstable_by_key(|e|e.start);
+    ranges.sort_unstable_by_key(|e| e.start);
     assert!(
-        ranges.windows(2)
-            .all(|e|{
-                let first = &e[0];
-                let second = &e[1];
-                first.end == second.start
-            }),
-        "Ranges overlap or have gaps: {ranges:?}");
-    let results = threads.into_iter()
-        .map(|e|e.join().unwrap())
+        ranges.windows(2).all(|e| {
+            let first = &e[0];
+            let second = &e[1];
+            first.end == second.start
+        }),
+        "Ranges overlap or have gaps: {ranges:?}"
+    );
+    let results = threads
+        .into_iter()
+        .map(|e| e.join().unwrap())
         //.map(|e|dbg!(e))
         .reduce(|mut left, right| {
             left.merge_with(right);
@@ -178,52 +183,60 @@ fn citymap_multi_threaded(path: &str) -> Citymap {
     results
 }
 
-fn citymap_thread(path: String, mut range: Range<u64>, i: usize, range_feedback: Sender<Range<u64>>) -> JoinHandle<Citymap> {
-    thread::Builder::new().name(format!("process_thread id: {i} assigned: {range:?}")).spawn(move ||{
-        let mut file = File::open(path).unwrap();
-        //println!("Before: {range:?}");
+fn citymap_thread(
+    path: String,
+    mut range: Range<u64>,
+    i: usize,
+    range_feedback: Sender<Range<u64>>,
+) -> JoinHandle<Citymap> {
+    thread::Builder::new()
+        .name(format!("process_thread id: {i} assigned: {range:?}"))
+        .spawn(move || {
+            let mut file = File::open(path).unwrap();
+            //println!("Before: {range:?}");
 
-        // Perform alignment of buffer/range at the start
-        {
-            // Skip head alignment for start of file
-            if range.start != 0 {
-                let mut head = vec![0; 50];
-                let len = file.read_at(&mut head, range.start).unwrap();
-                head.truncate(len);
-
-                for (i, &pos) in head.iter().enumerate()   {
-                    if pos == '\n' as u8 {
-                        range.start += i as u64;
-                        break;
-                    }
-                }
-            }
-
-            // tail alignment
+            // Perform alignment of buffer/range at the start
             {
-                let mut head = vec![0; 50];
-                let len = file.read_at(&mut head, range.end).unwrap();
-                head.truncate(len);
+                // Skip head alignment for start of file
+                if range.start != 0 {
+                    let mut head = vec![0; 50];
+                    let len = file.read_at(&mut head, range.start).unwrap();
+                    head.truncate(len);
 
-                for (i, &pos) in head.iter().enumerate()   {
-                    if pos == '\n' as u8 {
-                        range.end += i as u64;
-                        break;
+                    for (i, &pos) in head.iter().enumerate() {
+                        if pos == '\n' as u8 {
+                            range.start += i as u64;
+                            break;
+                        }
+                    }
+                }
+
+                // tail alignment
+                {
+                    let mut head = vec![0; 50];
+                    let len = file.read_at(&mut head, range.end).unwrap();
+                    head.truncate(len);
+
+                    for (i, &pos) in head.iter().enumerate() {
+                        if pos == '\n' as u8 {
+                            range.end += i as u64;
+                            break;
+                        }
                     }
                 }
             }
-        }
 
-        // Notify main about alignment
-        range_feedback.send(range.clone()).unwrap();
-        //println!("After: {range:?}");
-        // Ensure we remain within bounds of the designated file range
-        file.seek(SeekFrom::Start(range.start)).unwrap();
+            // Notify main about alignment
+            range_feedback.send(range.clone()).unwrap();
+            //println!("After: {range:?}");
+            // Ensure we remain within bounds of the designated file range
+            file.seek(SeekFrom::Start(range.start)).unwrap();
 
-        let limited = BufReader::with_capacity(10_usize.pow(5), file);
-        let mut buffered = limited.take(range.end - range.start);
-        citymap_naive(&mut buffered)
-    }).unwrap()
+            let limited = BufReader::with_capacity(10_usize.pow(5), file);
+            let mut buffered = limited.take(range.end - range.start);
+            citymap_naive(&mut buffered)
+        })
+        .unwrap()
 }
 
 fn citymap_naive(input: &mut impl BufRead) -> Citymap {
@@ -237,7 +250,9 @@ fn citymap_naive(input: &mut impl BufRead) -> Citymap {
         }
 
         // Skip over just newline strings that get created by the alignment process
-        if buf == &[b'\n'] {  continue }
+        if buf == &[b'\n'] {
+            continue;
+        }
 
         let mut city = None;
         let mut val = None;
@@ -247,7 +262,7 @@ fn citymap_naive(input: &mut impl BufRead) -> Citymap {
                 val = Some(&buf[(i + 1)..(buf.len() - 1)]);
                 break;
             }
-        };
+        }
         if city.is_none() {
             panic!("String:---{}---", String::from_utf8(buf).unwrap());
         }
@@ -263,10 +278,9 @@ fn citymap_naive(input: &mut impl BufRead) -> Citymap {
     map
 }
 
-
 fn print_results(map: Citymap) {
     let mut res = map.into_key_values();
-        res.sort_unstable_by(|(a, _), (b, _)|a.cmp(b));
+    res.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
     print!("{{");
     for (city, vals) in res {
         let min = vals.min();
